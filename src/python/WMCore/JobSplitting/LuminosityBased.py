@@ -43,6 +43,7 @@ class LuminosityBased(JobFactory):
         collectionName  = kwargs.get('collectionName', None)
         primaryDataset  = kwargs.get('primaryDataset', None)
         cmsswversion  = kwargs.get('cmsswversion', "CMSSW_5_3_8_patch3")
+        targetJobLength = int(kwargs.get('targetJobLength', None))
         testDqmLuminosityPerLs = kwargs.get('testDqmLuminosityPerLs', None)
         testPerfCurve = kwargs.get('testPerfCurve', None)
         minLuminosity = int(kwargs.get('minLuminosity', 1))
@@ -80,25 +81,28 @@ class LuminosityBased(JobFactory):
         for location in locationDict:
             self.newGroup()
             fileList = locationDict[location]
-            getRunLumiInformation = True
-            #for f in fileList:
-            #    if f['lfn'].startswith("MCFakeFile"):
-            #        #We have one MCFakeFile, then it needs run information
-            #        getRunLumiInformation = True
-            #        break
-            if getRunLumiInformation:
-                if self.package == 'WMCore.WMBS':
-                    loadRunLumi = self.daoFactory(
-                                        classname = "Files.GetBulkRunLumi")
-                    fileLumis = loadRunLumi.execute(files = fileList)
-                    for f in fileList:
-                        lumiDict = fileLumis.get(f['id'], {})
-                        for run in lumiDict.keys():
-                            f.addRun(run = Run(run, *lumiDict[run]))
+
+            if self.package == 'WMCore.WMBS':
+                loadRunLumi = self.daoFactory(
+                                    classname = "Files.GetBulkRunLumi")
+                fileLumis = loadRunLumi.execute(files = fileList)
+                for f in fileList:
+                    lumiDict = fileLumis.get(f['id'], {})
+                    for run in lumiDict.keys():
+                        f.addRun(run = Run(run, *lumiDict[run]))
+
+            # Now a very important note on why/how those loops are structured :
+            # We don't really need to worry about iterating through the runs, 
+            # as this is a reconstruction-only splitting algorithm, which 
+            # guarantees that the input is always RAW data, which is bound to
+            # T0 algorithms, those guarantee that RAW data has no file with multiple runs. 
+            # __ all files will have 1 run __
             for f in fileList:
                 currentEvent = f['first_event']
                 eventsInFile = f['events']
+                # Keeping this one just in case, but we know that we will have 1 run per file
                 runs = list(f['runs'])
+                run = runs[0].run
                 #We got the runs, clean the file.
                 f['runs'] = set()
 				
@@ -113,10 +117,9 @@ class LuminosityBased(JobFactory):
 
                 if not testDqmLuminosityPerLs: # If we have it beforehand is because the test sent it from the test file.
                     # Test if the curve is in the Cache before fecthing it from DQM
-                    if not dqmLuminosityPerLsCache[run]: 
+                    if not dqmLuminosityPerLsCache.has_key(run): 
                         dqmLuminosityPerLs = self.getLuminosityPerLsFromDQM(run)
-                    else :
-                        dqmLuminosityPerLs = dqmLuminosityPerLsCache[run]
+                        dqmLuminosityPerLsCache[run] = dqmLuminosityPerLs
                 else :
                     dqmLuminosityPerLs = testDqmLuminosityPerLs
                 # At the end we should actually get it from the splitter args. That should be passed by the stdSpec.
@@ -125,10 +128,23 @@ class LuminosityBased(JobFactory):
         		#maxLuminosity
         		#
                 if not testPerfCurve: # If we have it forehand is because the test sent it from the test file.
-                    perfCurve = self.getPerfCurve(cmsswversion, primaryDataset)
+                    # Test if the curve is in the Cache before fecthing it from DQM
+                    if not perfCurveCache.has_key(cmsswversion+primaryDataset): 
+                        perfCurve = self.getPerfCurve(cmsswversion, primaryDataset)
+                        perfCurveCache[cmsswversion+primaryDataset] = perfCurve
+                    #perfCurve = self.getPerfCurve(cmsswversion, primaryDataset)
                 else :
                     perfCurve = testPerfCurve
-                #pdb.set_trace()
+
+                # Now we got everything :
+                #  * Lumi range of file
+                #  * All sorts of information (luminosity, perf)
+                # So we should do the following :
+                #  * Get avg luminosity of the file range
+                #  * Get closest point in the curve, if multiple, average. Acceptable range should be defined (10% of the lumi maybe, or 200 diameter circle). FUNCTION
+                #  * If this can't be found, (not enough data somewhere, use timePerEvent)
+                #  * Get the TpE and find how much eventsPerJob we want for this file.
+                # 
                 # DEFAULT TPE IS MANDATORY!!!
                 # NOW, WE HAVE THIS "F" OBJECT HERE, THAT IS THE FILE. IN THE RUN/LUMI DICTIONARY WE SHOULD BE ABLE TO KNOW ITS LUMINOSITY. 
                 # IN THE TEST, THE FILE HAS NO RUN/LUMI. ADD THIS FIRST TO THE FAKE RUN.
@@ -202,17 +218,19 @@ class LuminosityBased(JobFactory):
                 totalJobs += 1
         return totalJobs
     
-    def getPerformanceFromDQM(self, run):
+    def getLuminosityPerLsFromDQM(self, run):
         
         # Get the proxy, as CMSWEB doesn't allow us to use plain HTTP
         hostCert = os.getenv("X509_USER_PROXY")
         hostKey  = hostCert
-        dqmUrl = "fakeDQMUrl"
+        dqmUrl = "https://cmsweb.cern.ch/dqm/online/"
         # it seems that curl -k works, but as we already have everything, I will just provide it
         
         # Make function to fetch this from DQM. Returning Null or False if it fails
-        getUrl = "%sjsonfairy/archive/%s/DQM/TimerService/event_byluminosity" % (dqmUrl, run)
-        logging.debug("Requesting performance information from %s" % getUrl)
+        getUrl = "%sjsonfairy/archive/%s/Global/Online/ALL/PixelLumi/PixelLumiDqmZeroBias/totalPixelLumiByLS" % (dqmUrl, str(run))
+#        getUrl = "%sjsonfairy/archive/%s/DQM/TimerService/event_byluminosity" % (dqmUrl, run)
+        #logging.info("Requesting performance information from %s" % getUrl)
+        print "Requesting performance information from %s" % getUrl
         
         regExp=re.compile('https://(.*)(/dqm.+)')
         regExpResult = regExp.match(getUrl)

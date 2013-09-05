@@ -281,11 +281,12 @@ class LuminosityBasedTest(unittest.TestCase):
         
 #        pdb.set_trace()
 
-        jobGroups = jobFactory(events_per_job = 100,
+        jobGroups = jobFactory(targetJobLength = 21600,
                                performance = self.performanceParams,
                                testDqmLuminosityPerLs = self.DQMLuminosityPerLs,
                                testPerfCurve = self.testPerfCurve, 
-                               primaryDataset = "SingleMu" )
+                               primaryDataset = "SingleMu",
+                               manualTimePerEvent = 15 )
 
         assert len(jobGroups) == 1, \
                "ERROR: JobFactory didn't return one JobGroup."
