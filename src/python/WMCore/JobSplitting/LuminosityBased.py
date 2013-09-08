@@ -143,12 +143,17 @@ class LuminosityBased(JobFactory):
                 #  * Get avg luminosity of the file range
                 avgLumi = self.getFileAvgLuminosity(f, dqmLuminosityPerLs)
                 #  * Get closest point in the curve, if multiple, average. Acceptable range should be defined
-                fileTimePerEvent = self.getFileTimePerEvent(avgLumi, perfCurve)
+                # Interesting feature here : if it finds too much points with the given precision (3rd param)
+                # It will call itself again, lowering the precision by 0.1 steps until it finds less than 5, more than 2 points
+                # This way we can have a much more precise range into the curve, if there is a lot of data
+                fileTimePerEvent = self.getFileTimePerEvent(avgLumi, perfCurve, 0.10)
                 #  * If this can't be found, (not enough data somewhere, use timePerEvent)
                 if fileTimePerEvent == 0 :
                     fileTimePerEvent = timePerEvent
                 #  * Get the TpE and find how much eventsPerJob we want for this file.
                 eventsPerJob = int(targetJobLength/fileTimePerEvent)
+                # This should become a logging.debug message!
+                print "This file has average instantaneous luminosity %f average time per event %f and is getting %i events per job" % (avgLumi, fileTimePerEvent, eventsPerJob)
                 # 
                 # DEFAULT TPE IS MANDATORY!!!
                 # NOW, WE HAVE THIS "F" OBJECT HERE, THAT IS THE FILE. IN THE RUN/LUMI DICTIONARY WE SHOULD BE ABLE TO KNOW ITS LUMINOSITY. 
@@ -235,19 +240,35 @@ class LuminosityBased(JobFactory):
         # https://github.com/samircury/WMCore/blob/b34e8fa4922e51909f0addccfcd5883641f72a82/src/python/WMComponent/TaskArchiver/TaskArchiverPoller.py#L989
         return avgLumi*46
             
-    def getFileTimePerEvent(self, avgLumi, perfCurve):
-        #avgLumi = int(avgLumi)
-        # Find points in a range of 10% of the avgLumi
-        stdDev = int(avgLumi*0.05)
-        # Find lower limit
-        # Find upper limit
-        # 
-        interestingPoints = {}
-        print "now going to search for %i" % avgLumi
+    def getFileTimePerEvent(self, avgLumi, perfCurve, precision = 0.1, enoughPrecision = False):
+        # FIXME: Would be very interesting to have an algorithm that recursively increases 
+        # precision if too much points are found (until it finds 5 or less points)
+        # To have a better notion, run the unit test while printing len(interestingPoints)
+
+        # Find points in a range of 5% of the avgLumi
+        stdDev = int(avgLumi*precision)
+        print "precision : %f" % precision
+
+        interestingPoints = list()
+        #print "now going to search for %i" % avgLumi
         for point in perfCurve :
+            #pdb.set_trace()
             if point[0] > avgLumi-stdDev and point[0] < avgLumi+stdDev :
-                print "found %i" % point[0]
-        return 0
+                interestingPoints.append(point)                
+        print len(interestingPoints)
+        if len(interestingPoints) == 0 :
+            if precision != 0.1 :
+                self.getFileTimePerEvent(avgLumi, perfCurve, precision = precision+0.01, enoughPrecision = True)
+            return 0
+        if len(interestingPoints) > 5 and precision > 0.01 and enoughPrecision == False:
+            self.getFileTimePerEvent(avgLumi, perfCurve, precision = precision-0.01)
+                #print "found %i" % point[0]
+        totalSec = 0
+        for point in interestingPoints:
+            totalSec += point[1]
+        avgTPE = totalSec/len(interestingPoints)
+           
+        return avgTPE
 
     def getLuminosityPerLsFromDQM(self, run):
         
