@@ -104,7 +104,7 @@ class LuminosityBased(JobFactory):
                 runs = list(f['runs'])
                 run = runs[0].run
                 #We got the runs, clean the file.
-                f['runs'] = set()
+                #f['runs'] = set()
 				
 				# Unsure of what is files with parents and if it will be needed in PromptReco and ReReco
                 #if getParents:
@@ -141,9 +141,14 @@ class LuminosityBased(JobFactory):
                 #  * All sorts of information (luminosity, perf)
                 # So we should do the following :
                 #  * Get avg luminosity of the file range
-                #  * Get closest point in the curve, if multiple, average. Acceptable range should be defined (10% of the lumi maybe, or 200 diameter circle). FUNCTION
+                avgLumi = self.getFileAvgLuminosity(f, dqmLuminosityPerLs)
+                #  * Get closest point in the curve, if multiple, average. Acceptable range should be defined
+                fileTimePerEvent = self.getFileTimePerEvent(avgLumi, perfCurve)
                 #  * If this can't be found, (not enough data somewhere, use timePerEvent)
+                if fileTimePerEvent == 0 :
+                    fileTimePerEvent = timePerEvent
                 #  * Get the TpE and find how much eventsPerJob we want for this file.
+                eventsPerJob = int(targetJobLength/fileTimePerEvent)
                 # 
                 # DEFAULT TPE IS MANDATORY!!!
                 # NOW, WE HAVE THIS "F" OBJECT HERE, THAT IS THE FILE. IN THE RUN/LUMI DICTIONARY WE SHOULD BE ABLE TO KNOW ITS LUMINOSITY. 
@@ -217,7 +222,33 @@ class LuminosityBased(JobFactory):
                                                      disk = diskRequired)
                 totalJobs += 1
         return totalJobs
-    
+
+    def getFileAvgLuminosity(self, f, dqmLuminosityPerLs):
+        runs = list(f['runs'])
+        lumis = runs[0].lumis
+        # find a way to get rid of this totalLumi
+        totalLumi = 0 
+        for lumiSection in lumis :
+            totalLumi += dqmLuminosityPerLs[lumiSection]
+        avgLumi = totalLumi/float(len(lumis))
+        # This is totally weird because we should have 23s lumiSections, not 46, however the number we get with 23 doesnt make sense, have a look here :
+        # https://github.com/samircury/WMCore/blob/b34e8fa4922e51909f0addccfcd5883641f72a82/src/python/WMComponent/TaskArchiver/TaskArchiverPoller.py#L989
+        return avgLumi*46
+            
+    def getFileTimePerEvent(self, avgLumi, perfCurve):
+        #avgLumi = int(avgLumi)
+        # Find points in a range of 10% of the avgLumi
+        stdDev = int(avgLumi*0.05)
+        # Find lower limit
+        # Find upper limit
+        # 
+        interestingPoints = {}
+        print "now going to search for %i" % avgLumi
+        for point in perfCurve :
+            if point[0] > avgLumi-stdDev and point[0] < avgLumi+stdDev :
+                print "found %i" % point[0]
+        return 0
+
     def getLuminosityPerLsFromDQM(self, run):
         
         # Get the proxy, as CMSWEB doesn't allow us to use plain HTTP
