@@ -103,30 +103,16 @@ class LuminosityBased(JobFactory):
                 # Keeping this one just in case, but we know that we will have 1 run per file
                 runs = list(f['runs'])
                 run = runs[0].run
-                #We got the runs, clean the file.
-                #f['runs'] = set()
-				
-				# Unsure of what is files with parents and if it will be needed in PromptReco and ReReco
-                #if getParents:
-                #    parentLFNs = self.findParent(lfn = f['lfn'])
-                #    for lfn in parentLFNs:
-                #        parent = File(lfn = lfn)
-                #        f['parents'].add(parent)
-                
-				#LOAD LUMINOSITY PER LS FROM DQM
-
-                if not testDqmLuminosityPerLs: # If we have it beforehand is because the test sent it from the test file.
+    
+                # If we have it beforehand is because the test sent it from the test file.
+                if not testDqmLuminosityPerLs:
                     # Test if the curve is in the Cache before fecthing it from DQM
-                    if not dqmLuminosityPerLsCache.has_key(run): 
+                    if not dqmLuminosityPerLsCache.has_key(run):
                         dqmLuminosityPerLs = self.getLuminosityPerLsFromDQM(run)
                         dqmLuminosityPerLsCache[run] = dqmLuminosityPerLs
                 else :
                     dqmLuminosityPerLs = testDqmLuminosityPerLs
-                # At the end we should actually get it from the splitter args. That should be passed by the stdSpec.
-				# LOAD PERFORMANCE CURVE FROM DASHBOARD, WIDE RANGE OR RUN RANGE? (FALLBACK TO DQM? DO NOT THINK SO, NEEDS RUN NUMBER)
-        		#minLuminosity
-        		#maxLuminosity
-        		#
+
                 if not testPerfCurve: # If we have it forehand is because the test sent it from the test file.
                     # Test if the curve is in the Cache before fecthing it from DQM
                     if not perfCurveCache.has_key(cmsswversion+primaryDataset): 
@@ -142,6 +128,7 @@ class LuminosityBased(JobFactory):
                 # So we should do the following :
                 #  * Get avg luminosity of the file range
                 avgLumi = self.getFileAvgLuminosity(f, dqmLuminosityPerLs)
+
                 #  * Get closest point in the curve, if multiple, average. Acceptable range should be defined
                 # Interesting feature here : if it finds too much points with the given precision (3rd param)
                 # It will call itself again, lowering the precision by 0.1 steps until it finds less than 5, more than 2 points
@@ -153,7 +140,7 @@ class LuminosityBased(JobFactory):
                 #  * Get the TpE and find how much eventsPerJob we want for this file.
                 eventsPerJob = int(targetJobLength/fileTimePerEvent)
                 # This should become a logging.debug message!
-                print "This file has average instantaneous luminosity %f average time per event %f and is getting %i events per job" % (avgLumi, fileTimePerEvent, eventsPerJob)
+                logging.info("This file has average instantaneous luminosity %f average time per event %f and is getting %i events per job" % (avgLumi, fileTimePerEvent, eventsPerJob))
                 # 
                 # DEFAULT TPE IS MANDATORY!!!
                 # NOW, WE HAVE THIS "F" OBJECT HERE, THAT IS THE FILE. IN THE RUN/LUMI DICTIONARY WE SHOULD BE ABLE TO KNOW ITS LUMINOSITY. 
@@ -236,33 +223,41 @@ class LuminosityBased(JobFactory):
         for lumiSection in lumis :
             totalLumi += dqmLuminosityPerLs[lumiSection]
         avgLumi = totalLumi/float(len(lumis))
-        # This is totally weird because we should have 23s lumiSections, not 46, however the number we get with 23 doesnt make sense, have a look here :
-        # https://github.com/samircury/WMCore/blob/b34e8fa4922e51909f0addccfcd5883641f72a82/src/python/WMComponent/TaskArchiver/TaskArchiverPoller.py#L989
-        return avgLumi*46
+        # Attention here, people being eager to do quick math led to several mistakes in the past.
+        # The luminosity we get from DQM is INTEGRATED and in nano barns, or 10e33, while all
+        # monitoring bases itself in INSTANTANEOUS luminosity, usually in 10e30 scales.
+        # We will then have to divide avgLumi by 23, length of a LS in the LHC Run1.
+        avgLumi = (avgLumi*1000)/23
+        
+        return avgLumi
             
     def getFileTimePerEvent(self, avgLumi, perfCurve, precision = 0.1, enoughPrecision = False):
-        # FIXME: Would be very interesting to have an algorithm that recursively increases 
-        # precision if too much points are found (until it finds 5 or less points)
-        # To have a better notion, run the unit test while printing len(interestingPoints)
+        # This is a very interesting part of the algorithm, where it adapts the precision according
+        # to the number of points obtained, if too much it raises the precision so we get more narrow
+        # in the selection of points, close to the average that we want. It also has some smart handling
+        # of situations where it lowers the precision and gets nothing, then it goes one step back.
 
         # Find points in a range of 5% of the avgLumi
         stdDev = int(avgLumi*precision)
-        print "precision : %f" % precision
+        logging.debug("Searching for performance information, luminosity %f, precision : %f" % (avgLumi, precision))
 
         interestingPoints = list()
-        #print "now going to search for %i" % avgLumi
         for point in perfCurve :
-            #pdb.set_trace()
             if point[0] > avgLumi-stdDev and point[0] < avgLumi+stdDev :
                 interestingPoints.append(point)                
-        print len(interestingPoints)
+
+        logging.debug("found %i interesting points" % len(interestingPoints))
+
         if len(interestingPoints) == 0 :
             if precision != 0.1 :
                 self.getFileTimePerEvent(avgLumi, perfCurve, precision = precision+0.01, enoughPrecision = True)
             return 0
+
+        # If we have too much data, call itself again, with more precision
         if len(interestingPoints) > 5 and precision > 0.01 and enoughPrecision == False:
             self.getFileTimePerEvent(avgLumi, perfCurve, precision = precision-0.01)
-                #print "found %i" % point[0]
+
+        # Finally calculates the average time per event and returns it
         totalSec = 0
         for point in interestingPoints:
             totalSec += point[1]
