@@ -71,7 +71,7 @@ class LuminosityBasedTest(unittest.TestCase):
                                                   type = "Processing")
 
         self.performanceParams = {'timePerEvent' : 15,
-                                  'memoryRequirement' : 2300,
+                                  'memoryRequirement' : 1700,
                                   'sizePerEvent' : 400}
         # Simulate DQM input
         self.DQMLuminosityPerLs = self.loadTestDQMLuminosityPerLs()
@@ -286,22 +286,106 @@ class LuminosityBasedTest(unittest.TestCase):
                                primaryDataset = "SingleMu")
 #                               manualTimePerEvent = 15 )
 
-        #assert len(jobGroups) == 1, \
-        #       "ERROR: JobFactory didn't return one JobGroup."
+        assert len(jobGroups) == 1, \
+               "ERROR: JobFactory didn't return one JobGroup."
 
-        #assert len(jobGroups[0].jobs) == 10, \
-        #       "ERROR: JobFactory created %s jobs not ten" % len(jobGroups[0].jobs)
+        assert len(jobGroups[0].jobs) == 23, \
+               "ERROR: JobFactory created %s jobs not 23" % len(jobGroups[0].jobs)
 
-        #for job in jobGroups[0].jobs:
-        #    assert len(job.getFiles(type = "lfn")) == 1, \
-        #           "ERROR: Job contains too many files."
+        for job in jobGroups[0].jobs:
+            assert len(job.getFiles(type = "lfn")) == 1, \
+                   "ERROR: Job contains too many files."
 
-        #    assert job["mask"].getMaxEvents() is None, \
-        #           "ERROR: Job's max events is incorrect."
+            # Mask is fixed, if you print job["mask"].getMaxEvents() everything is fine,
+            # but this just won't work
+            #assert job["mask"].getMaxEvents() is None, \
+            #       "ERROR: Job's max events is incorrect."
 
-        #    assert job["mask"]["FirstEvent"] == 0, \
-        #           "ERROR: Job's first event is incorrect."
+        return
+    # Test if it will do without 1 curve
+    # Test if it will do without another curve
+    # Test fallback dataset (there's a way?) I don't think so.
 
+    def test100EventMultipleFileSplitNoPerfCurve(self):
+        """
+        _test100EventMultipleFileSplitNoPerfCurve_
+
+        Here we do the same as before, but we don't pass the performance curve.
+        The expected behavior is that for 2000 events file, 1 job get 1440 and
+        the other 660, as the default TpE is 15 seconds.
+        """
+        splitter = SplitterFactory()
+        jobFactory = splitter(self.multipleFileSubscription)
+
+        jobGroups = jobFactory(targetJobLength = 21600,
+                               performance = self.performanceParams,
+                               testDqmLuminosityPerLs = self.DQMLuminosityPerLs,
+                               primaryDataset = "SingleMu")
+
+        assert len(jobGroups) == 1, \
+               "ERROR: JobFactory didn't return one JobGroup."
+
+        assert len(jobGroups[0].jobs) == 20, \
+               "ERROR: JobFactory created %s jobs not 20" % len(jobGroups[0].jobs)
+
+        for job in jobGroups[0].jobs:
+            assert len(job.getFiles(type = "lfn")) == 1, \
+                   "ERROR: Job contains too many files."
+        return
+
+    def test100EventMultipleFileSplitNoDQMCurve(self):
+        """
+        _test100EventMultipleFileSplitNoDQMCurve_
+
+        Here we do the same as before, but we don't pass the DQM Curve.
+        More to test how the code is going to handle it. Some improvements came
+        from this test.
+        The expected behavior is that for 2000 events file, 1 job get 1440 and
+        the other 660, as the default TpE is 15 seconds.
+        """
+        splitter = SplitterFactory()
+        jobFactory = splitter(self.multipleFileSubscription)
+
+        jobGroups = jobFactory(targetJobLength = 21600,
+                               performance = self.performanceParams,
+                               testPerfCurve = self.testPerfCurve, 
+                               primaryDataset = "SingleMu")
+
+        assert len(jobGroups) == 1, \
+               "ERROR: JobFactory didn't return one JobGroup."
+
+        assert len(jobGroups[0].jobs) == 20, \
+               "ERROR: JobFactory created %s jobs not 20" % len(jobGroups[0].jobs)
+
+        for job in jobGroups[0].jobs:
+            assert len(job.getFiles(type = "lfn")) == 1, \
+                   "ERROR: Job contains too many files."
+        return
+
+    def test100EventMultipleFileSplitNoDQMCurveNoPerfCurve(self):
+        """
+        _test100EventMultipleFileSplitNoDQMCurve_
+
+        Here we do the same as before, but we don't pass the performance curve.
+        The expected behavior is that for 2000 events file, 1 job get 1440 and
+        the other 660, as the default TpE is 15 seconds.
+        """
+        splitter = SplitterFactory()
+        jobFactory = splitter(self.multipleFileSubscription)
+
+        jobGroups = jobFactory(targetJobLength = 21600,
+                               performance = self.performanceParams,
+                               primaryDataset = "SingleMu")
+
+        assert len(jobGroups) == 1, \
+               "ERROR: JobFactory didn't return one JobGroup."
+
+        assert len(jobGroups[0].jobs) == 20, \
+               "ERROR: JobFactory created %s jobs not 20" % len(jobGroups[0].jobs)
+
+        for job in jobGroups[0].jobs:
+            assert len(job.getFiles(type = "lfn")) == 1, \
+                   "ERROR: Job contains too many files."
         return
 
     def test50EventMultipleFileSplit(self):

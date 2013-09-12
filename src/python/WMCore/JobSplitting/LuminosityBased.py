@@ -123,32 +123,34 @@ class LuminosityBased(JobFactory):
                     perfCurve = testPerfCurve
 
                 # Now we got everything :
-                #  * Lumi range of file
+                #  * Lumi-section range of file
                 #  * All sorts of information (luminosity, perf)
                 # So we should do the following :
                 #  * Get avg luminosity of the file range
-                avgLumi = self.getFileAvgLuminosity(f, dqmLuminosityPerLs)
+                fileTimePerEvent = 0 
+                if dqmLuminosityPerLs :
+                    avgLumi = self.getFileAvgLuminosity(f, dqmLuminosityPerLs)
 
-                #  * Get closest point in the curve, if multiple, average. Acceptable range should be defined
-                # Interesting feature here : if it finds too much points with the given precision (3rd param)
-                # It will call itself again, lowering the precision by 0.1 steps until it finds less than 5, more than 2 points
-                # This way we can have a much more precise range into the curve, if there is a lot of data
-                fileTimePerEvent = self.getFileTimePerEvent(avgLumi, perfCurve, 0.10)
-                #  * If this can't be found, (not enough data somewhere, use timePerEvent)
+                    #  * Get closest point in the curve, if multiple, average. Acceptable range should be defined
+                    # Interesting feature here : if it finds too much points with the given precision (3rd param)
+                    # It will call itself again, lowering the precision by 0.1 steps until it finds less than 5, more than 2 points
+                    # This way we can have a much more precise range into the curve, if there is a lot of data
+                    fileTimePerEvent = self.getFileTimePerEvent(avgLumi, perfCurve, 0.10)
+                    #  * If this can't be found, (not enough data somewhere, use timePerEvent)
                 if fileTimePerEvent == 0 :
                     fileTimePerEvent = timePerEvent
                 #  * Get the TpE and find how much eventsPerJob we want for this file.
                 eventsPerJob = int(targetJobLength/fileTimePerEvent)
                 # This should become a logging.debug message!
-                logging.info("This file has average instantaneous luminosity %f average time per event %f and is getting %i events per job" % (avgLumi, fileTimePerEvent, eventsPerJob))
-                # 
-                # DEFAULT TPE IS MANDATORY!!!
-                # NOW, WE HAVE THIS "F" OBJECT HERE, THAT IS THE FILE. IN THE RUN/LUMI DICTIONARY WE SHOULD BE ABLE TO KNOW ITS LUMINOSITY. 
-                # IN THE TEST, THE FILE HAS NO RUN/LUMI. ADD THIS FIRST TO THE FAKE RUN.
-				# 
-				# TUNE EVENTS PER JOB ACCORDING TO DESIRED JOB LENGTH. CONFIGURABLE, DEFAULTS TO 8H
-				# 
-				# UPDATE EVENTS PER JOB HERE
+                if fileTimePerEvent != timePerEvent :
+                    logging.info("This file has average instantaneous luminosity %f average time per event %f and is getting %i events per job" % 
+                                    (avgLumi, fileTimePerEvent, eventsPerJob))
+                    print "This file has average instantaneous luminosity %f average time per event %f and is getting %i events per job" % (avgLumi, fileTimePerEvent, eventsPerJob)
+                else : 
+                    logging.info("This file did not get enough performance information and is getting manual TpE %f , therefore %i events per job" %
+                                    (fileTimePerEvent, eventsPerJob))
+                    print "This file did not get enough performance information and is getting manual TpE %f , therefore %i events per job" %   (fileTimePerEvent, eventsPerJob)
+
 
                 if not f['lfn'].startswith("MCFakeFile"):
                     #Then we know for sure it is not a MCFakeFile, so process
@@ -164,7 +166,7 @@ class LuminosityBased(JobFactory):
                             else:
                                 jobTime = (eventsInFile - currentEvent) * timePerEvent
                                 diskRequired = (eventsInFile - currentEvent) * sizePerEvent
-                                self.currentJob["mask"].setMaxAndSkipEvents(None,
+                                self.currentJob["mask"].setMaxAndSkipEvents(eventsInFile,
                                                                             currentEvent)
                             self.currentJob.addResourceEstimates(jobTime = jobTime,
                                                                  memory = memoryRequirement,
@@ -270,6 +272,11 @@ class LuminosityBased(JobFactory):
         # Get the proxy, as CMSWEB doesn't allow us to use plain HTTP
         hostCert = os.getenv("X509_USER_PROXY")
         hostKey  = hostCert
+        try :
+            os.stat(hostCert)        
+        except OSError :
+            logging.debug("X509_USER_PROXY was not really there, no DQM Perf curve this time")
+            return False
         dqmUrl = "https://cmsweb.cern.ch/dqm/online/"
         # it seems that curl -k works, but as we already have everything, I will just provide it
         
