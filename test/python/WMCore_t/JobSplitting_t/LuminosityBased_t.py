@@ -39,10 +39,8 @@ class LuminosityBasedTest(unittest.TestCase):
         self.multipleFileFileset = Fileset(name = "TestFileset1")
         for i in range(10):
             newFile = File(makeUUID(), size = 20000, events = 2000)
-            # 80*(index-1), 80*(index)
+            # Files will have a range of 80 lumi-sections each
             newFile.addRun(Run(207214, *range(80*i, 80*(i+1))))
-            #newFile.runs = set()
-            #newFile.runs.add(207214)
             newFile.setLocation('se01')
             self.multipleFileFileset.addFile(newFile)
 

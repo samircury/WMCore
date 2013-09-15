@@ -102,6 +102,8 @@ class LuminosityBased(JobFactory):
                 eventsInFile = f['events']
                 # Keeping this one just in case, but we know that we will have 1 run per file
                 runs = list(f['runs'])
+                #for runObject in runs :
+                #run = runObject.run
                 run = runs[0].run
     
                 # If we have it beforehand is because the test sent it from the test file.
@@ -151,7 +153,7 @@ class LuminosityBased(JobFactory):
                                     (fileTimePerEvent, eventsPerJob))
                     print "This file did not get enough performance information and is getting manual TpE %f , therefore %i events per job" %   (fileTimePerEvent, eventsPerJob)
 
-
+                # Ask about this in the list.
                 if not f['lfn'].startswith("MCFakeFile"):
                     #Then we know for sure it is not a MCFakeFile, so process
                     #it as usual
@@ -275,15 +277,12 @@ class LuminosityBased(JobFactory):
         try :
             os.stat(hostCert)        
         except OSError :
-            logging.debug("X509_USER_PROXY was not really there, no DQM Perf curve this time")
+            logging.debug("X509_USER_PROXY was not really there, can't query DQM GUI")
             return False
         dqmUrl = "https://cmsweb.cern.ch/dqm/online/"
-        # it seems that curl -k works, but as we already have everything, I will just provide it
-        
-        # Make function to fetch this from DQM. Returning Null or False if it fails
         getUrl = "%sjsonfairy/archive/%s/Global/Online/ALL/PixelLumi/PixelLumiDqmZeroBias/totalPixelLumiByLS" % (dqmUrl, str(run))
-#        getUrl = "%sjsonfairy/archive/%s/DQM/TimerService/event_byluminosity" % (dqmUrl, run)
-        #logging.info("Requesting performance information from %s" % getUrl)
+
+        # FIXME: remove this in the final commits
         print "Requesting performance information from %s" % getUrl
         
         regExp=re.compile('https://(.*)(/dqm.+)')
@@ -300,7 +299,7 @@ class LuminosityBased(JobFactory):
             logging.info("Actually got a JSON from DQM perf in for run %d  , but content was bad, Bailing out"
                          % run)
             return False
-        logging.debug("We have the performance curve")
+        logging.debug("We have the DQM performance curve")
         return responseJSON
 
     def getPerfCurve(self, cmsswversion, primaryDataset):
