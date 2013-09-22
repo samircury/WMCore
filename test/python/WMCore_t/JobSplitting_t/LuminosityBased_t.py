@@ -42,15 +42,19 @@ class LuminosityBasedTest(unittest.TestCase):
             # Files will have a range of 80 lumi-sections each
             newFile.addRun(Run(207214, *range(80*i, 80*(i+1))))
             newFile.setLocation('se01')
+       
+            
             self.multipleFileFileset.addFile(newFile)
 
         self.singleFileFileset = Fileset(name = "TestFileset2")
-        newFile = File("/some/file/name", size = 1000, events = 100)
+        newFile = File("/some/file/name", size = 20000, events = 2000)
         newFile.setLocation('se02')
+        newFile.addRun(Run(207214, *range(1, 80)))
         self.singleFileFileset.addFile(newFile)
 
         self.emptyFileFileset = Fileset(name = "TestFileset3")
         newFile = File("/some/file/name", size = 1000, events = 0)
+        newFile.addRun(Run(207214, *range(1, 80)))
         newFile.setdefault('se03')
         self.emptyFileFileset.addFile(newFile)
 
@@ -110,14 +114,19 @@ class LuminosityBasedTest(unittest.TestCase):
         """
         _testNoEvents_
 
-        Test event based job splitting where there are no events in the
+        Test luminosity based job splitting where there are no events in the
         input file, make sure the mask events are None
         """
         splitter = SplitterFactory()
         jobFactory = splitter(self.emptyFileSubscription)
-        jobGroups = jobFactory(events_per_job = 100,
-                               performance = self.performanceParams)
 
+        jobGroups = jobFactory(targetJobLength = 10800,
+                               cmsswversion = "CMSSW_5_3_6",
+                               performance = self.performanceParams,
+                               testDqmLuminosityPerLs = self.DQMLuminosityPerLs,
+                               testPerfCurve = self.testPerfCurve, 
+                               primaryDataset = "SingleMu")
+        
         self.assertEqual(len(jobGroups), 1,
                          "ERROR: JobFactory didn't return one JobGroup")
         self.assertEqual(len(jobGroups[0].jobs), 1,
@@ -131,49 +140,23 @@ class LuminosityBasedTest(unittest.TestCase):
                          "ERROR: Mask maxEvents is not None")
 
 
-    def testExactEvents(self):
+        
+    def testTooLongJobSplit(self):
         """
-        _testExactEvents_
+        _testTooLongJobSplit_
 
-        Test event based job splitting when the number of events per job is
-        exactly the same as the number of events in the input file.
-        """
-        splitter = SplitterFactory()
-        jobFactory = splitter(self.singleFileSubscription)
-        jobGroups = jobFactory(events_per_job = 100,
-                               performance = self.performanceParams)
-
-        assert len(jobGroups) == 1, \
-               "ERROR: JobFactory didn't return one JobGroup."
-
-        assert len(jobGroups[0].jobs) == 1, \
-               "ERROR: JobFactory didn't create a single job."
-
-        job = jobGroups[0].jobs.pop()
-
-        assert job.getFiles(type = "lfn") == ["/some/file/name"], \
-               "ERROR: Job contains unknown files."
-
-        assert job["mask"].getMaxEvents() is None, \
-               "ERROR: Job's max events is incorrect."
-
-        assert job["mask"]["FirstEvent"] == 0, \
-               "ERROR: Job's first event is incorrect."
-
-        return
-
-    def testMoreEvents(self):
-        """
-        _testMoreEvents_
-
-        Test event based job splitting when the number of events per job is
-        greater than the number of events in the input file.
+        Test luminosity based job splitting when we stretch a bit the limits - 70k seconds per job 
         """
         splitter = SplitterFactory()
         jobFactory = splitter(self.singleFileSubscription)
+        
 
-        jobGroups = jobFactory(events_per_job = 1000,
-                               performance = self.performanceParams)
+        jobGroups = jobFactory(targetJobLength = 70000,
+                               cmsswversion = "CMSSW_5_3_6",
+                               performance = self.performanceParams,
+                               testDqmLuminosityPerLs = self.DQMLuminosityPerLs,
+                               testPerfCurve = self.testPerfCurve, 
+                               primaryDataset = "SingleMu")
 
         assert len(jobGroups) == 1, \
                "ERROR: JobFactory didn't return one JobGroup."
@@ -181,48 +164,51 @@ class LuminosityBasedTest(unittest.TestCase):
         assert len(jobGroups[0].jobs) == 1, \
                "ERROR: JobFactory created %s jobs not one" % len(jobGroups[0].jobs)
 
-        job = jobGroups[0].jobs.pop()
+        firstEvents = []
+        for job in jobGroups[0].jobs:
 
-        assert job.getFiles(type = "lfn") == ["/some/file/name"], \
-               "ERROR: Job contains unknown files."
+            assert job.getFiles(type = "lfn") == ["/some/file/name"], \
+                   "ERROR: Job contains unknown files."
 
-        assert job["mask"].getMaxEvents() is None, \
-               "ERROR: Job's max events is incorrect."
+            assert job["mask"]["FirstEvent"] not in [-1, 1700], \
+                   "ERROR: Job's first event is incorrect."
 
-        assert job["mask"]["FirstEvent"] is None, \
-               "ERROR: Job's first event is incorrect."
+            assert job["mask"]["FirstEvent"] not in firstEvents, \
+                   "ERROR: Job's first event is repeated."
+            firstEvents.append(job["mask"]["FirstEvent"])
 
         return
-
-    def test50EventSplit(self):
+        
+    def test5mJobSplit(self):
         """
-        _test50EventSplit_
+        _test5mJobSplit_
 
-        Test event based job splitting when the number of events per job is
-        50, this should result in two jobs.
+        Test luminosity based job splitting when we want 5m jobs.
+        Stretching limits once more.
         """
-
         splitter = SplitterFactory()
         jobFactory = splitter(self.singleFileSubscription)
+        
 
-        jobGroups = jobFactory(events_per_job = 50,
-                               performance = self.performanceParams)
+        jobGroups = jobFactory(targetJobLength = 300,
+                               cmsswversion = "CMSSW_5_3_6",
+                               performance = self.performanceParams,
+                               testDqmLuminosityPerLs = self.DQMLuminosityPerLs,
+                               testPerfCurve = self.testPerfCurve, 
+                               primaryDataset = "SingleMu")
 
         assert len(jobGroups) == 1, \
                "ERROR: JobFactory didn't return one JobGroup."
 
-        assert len(jobGroups[0].jobs) == 2, \
-               "ERROR: JobFactory created %s jobs not two" % len(jobGroups[0].jobs)
+        assert len(jobGroups[0].jobs) == 182, \
+               "ERROR: JobFactory created %s jobs not 182" % len(jobGroups[0].jobs)
 
         firstEvents = []
         for job in jobGroups[0].jobs:
             assert job.getFiles(type = "lfn") == ["/some/file/name"], \
                    "ERROR: Job contains unknown files."
 
-            assert job["mask"].getMaxEvents() == 50 or job["mask"].getMaxEvents() is None, \
-                   "ERROR: Job's max events is incorrect."
-
-            assert job["mask"]["FirstEvent"] in [0, 50], \
+            assert job["mask"]["FirstEvent"] not in [-1, 1700], \
                    "ERROR: Job's first event is incorrect."
 
             assert job["mask"]["FirstEvent"] not in firstEvents, \
@@ -231,34 +217,36 @@ class LuminosityBasedTest(unittest.TestCase):
 
         return
 
-    def test99EventSplit(self):
-        """
-        _test99EventSplit_
 
-        Test event based job splitting when the number of events per job is
-        99, this should result in two jobs.
+    def test1hJobSplit(self):
+        """
+        _test1hJobSplit_
+
+        Test luminosity based job splitting when we want 1h jobs.
         """
         splitter = SplitterFactory()
         jobFactory = splitter(self.singleFileSubscription)
+        
 
-        jobGroups = jobFactory(events_per_job = 99,
-                               performance = self.performanceParams)
+        jobGroups = jobFactory(targetJobLength = 3600,
+                               cmsswversion = "CMSSW_5_3_6",
+                               performance = self.performanceParams,
+                               testDqmLuminosityPerLs = self.DQMLuminosityPerLs,
+                               testPerfCurve = self.testPerfCurve, 
+                               primaryDataset = "SingleMu")
 
         assert len(jobGroups) == 1, \
                "ERROR: JobFactory didn't return one JobGroup."
 
-        assert len(jobGroups[0].jobs) == 2, \
-               "ERROR: JobFactory created %s jobs not two" % len(jobGroups[0].jobs)
+        assert len(jobGroups[0].jobs) == 15, \
+               "ERROR: JobFactory created %s jobs not fifteen" % len(jobGroups[0].jobs)
 
         firstEvents = []
         for job in jobGroups[0].jobs:
             assert job.getFiles(type = "lfn") == ["/some/file/name"], \
                    "ERROR: Job contains unknown files."
 
-            self.assertTrue(job["mask"].getMaxEvents() == 99 or job['mask'].getMaxEvents() is None,
-                            "ERROR: Job's max events is incorrect.")
-
-            assert job["mask"]["FirstEvent"] in [0, 99], \
+            assert job["mask"]["FirstEvent"] not in [-1, 1700], \
                    "ERROR: Job's first event is incorrect."
 
             assert job["mask"]["FirstEvent"] not in firstEvents, \
@@ -267,22 +255,59 @@ class LuminosityBasedTest(unittest.TestCase):
 
         return
 
-    def test100EventMultipleFileSplit(self):
-        """
-        _test100EventMultipleFileSplit_
 
-        Test job splitting into 100 event jobs when the input subscription has
-        more than one file available.
+    def test3hJobSplit(self):
+        """
+        _test3hJobSplit_
+
+        Test luminosity based job splitting when we want 3h jobs.
+        """
+        splitter = SplitterFactory()
+        jobFactory = splitter(self.singleFileSubscription)
+        
+
+        jobGroups = jobFactory(targetJobLength = 10800,
+                               cmsswversion = "CMSSW_5_3_6",
+                               performance = self.performanceParams,
+                               testDqmLuminosityPerLs = self.DQMLuminosityPerLs,
+                               testPerfCurve = self.testPerfCurve, 
+                               primaryDataset = "SingleMu")
+
+        assert len(jobGroups) == 1, \
+               "ERROR: JobFactory didn't return one JobGroup."
+
+        assert len(jobGroups[0].jobs) == 5, \
+               "ERROR: JobFactory created %s jobs not five" % len(jobGroups[0].jobs)
+
+        firstEvents = []
+        for job in jobGroups[0].jobs:
+            assert job.getFiles(type = "lfn") == ["/some/file/name"], \
+                   "ERROR: Job contains unknown files."
+
+            assert job["mask"]["FirstEvent"] not in [-1, 1700], \
+                   "ERROR: Job's first event is incorrect."
+
+            assert job["mask"]["FirstEvent"] not in firstEvents, \
+                   "ERROR: Job's first event is repeated."
+            firstEvents.append(job["mask"]["FirstEvent"])
+
+        return
+
+    def test6hJobMultipleFileSplit(self):
+        """
+        _test6hJobMultipleFileSplit_
+
+        Test luminosity based job splitting when we want 6h jobs. Multiple files fileset.
         """
         splitter = SplitterFactory()
         jobFactory = splitter(self.multipleFileSubscription)
 
         jobGroups = jobFactory(targetJobLength = 21600,
+                               cmsswversion = "CMSSW_5_3_6",
                                performance = self.performanceParams,
                                testDqmLuminosityPerLs = self.DQMLuminosityPerLs,
                                testPerfCurve = self.testPerfCurve, 
                                primaryDataset = "SingleMu")
-#                               manualTimePerEvent = 15 )
 
         assert len(jobGroups) == 1, \
                "ERROR: JobFactory didn't return one JobGroup."
@@ -294,19 +319,39 @@ class LuminosityBasedTest(unittest.TestCase):
             assert len(job.getFiles(type = "lfn")) == 1, \
                    "ERROR: Job contains too many files."
 
-            # Mask is fixed, if you print job["mask"].getMaxEvents() everything is fine,
-            # but this just won't work
-            #assert job["mask"].getMaxEvents() is None, \
-            #       "ERROR: Job's max events is incorrect."
-
         return
-    # Test if it will do without 1 curve
-    # Test if it will do without another curve
-    # Test fallback dataset (there's a way?) I don't think so.
 
-    def test100EventMultipleFileSplitNoPerfCurve(self):
+    def test5mJobMultipleFileSplit(self):
         """
-        _test100EventMultipleFileSplitNoPerfCurve_
+        _test5mJobMultipleFileSplit_
+
+        Test luminosity based job splitting when we want 5m jobs. Multiple files fileset.
+        Non realistic scenario. Stretching limits.
+        """
+        splitter = SplitterFactory()
+        jobFactory = splitter(self.multipleFileSubscription)
+
+        jobGroups = jobFactory(targetJobLength = 300,
+                               cmsswversion = "CMSSW_5_3_6",
+                               performance = self.performanceParams,
+                               testDqmLuminosityPerLs = self.DQMLuminosityPerLs,
+                               testPerfCurve = self.testPerfCurve, 
+                               primaryDataset = "SingleMu")
+        
+        assert len(jobGroups) == 1, \
+               "ERROR: JobFactory didn't return one JobGroup."
+
+        assert len(jobGroups[0].jobs) == 1273, \
+               "ERROR: JobFactory created %s jobs not 1273" % len(jobGroups[0].jobs)
+
+        for job in jobGroups[0].jobs:
+            assert len(job.getFiles(type = "lfn")) == 1, \
+                   "ERROR: Job contains too many files."
+        return
+
+    def test6hJobMultipleFileSplitNoPerfCurve(self):
+        """
+        _test6hJobMultipleFileSplitNoPerfCurve_
 
         Here we do the same as before, but we don't pass the performance curve.
         The expected behavior is that for 2000 events file, 1 job get 1440 and
@@ -315,7 +360,11 @@ class LuminosityBasedTest(unittest.TestCase):
         splitter = SplitterFactory()
         jobFactory = splitter(self.multipleFileSubscription)
 
+        # Make sure that the function will not try to make HTTP requests within the test:
+        os.environ['X509_USER_PROXY'] = ""
+
         jobGroups = jobFactory(targetJobLength = 21600,
+                               cmsswversion = "CMSSW_5_3_6",
                                performance = self.performanceParams,
                                testDqmLuminosityPerLs = self.DQMLuminosityPerLs,
                                primaryDataset = "SingleMu")
@@ -331,9 +380,9 @@ class LuminosityBasedTest(unittest.TestCase):
                    "ERROR: Job contains too many files."
         return
 
-    def test100EventMultipleFileSplitNoDQMCurve(self):
+    def test6hJobEventMultipleFileSplitNoDQMCurve(self):
         """
-        _test100EventMultipleFileSplitNoDQMCurve_
+        _test6hJobMultipleFileSplitNoDQMCurve_
 
         Here we do the same as before, but we don't pass the DQM Curve.
         More to test how the code is going to handle it. Some improvements came
@@ -343,8 +392,12 @@ class LuminosityBasedTest(unittest.TestCase):
         """
         splitter = SplitterFactory()
         jobFactory = splitter(self.multipleFileSubscription)
+        
+        # Make sure that the function will not try to make HTTP requests within the test:
+        os.environ['X509_USER_PROXY'] = ""
 
         jobGroups = jobFactory(targetJobLength = 21600,
+                               cmsswversion = "CMSSW_5_3_6",
                                performance = self.performanceParams,
                                testPerfCurve = self.testPerfCurve, 
                                primaryDataset = "SingleMu")
@@ -360,9 +413,9 @@ class LuminosityBasedTest(unittest.TestCase):
                    "ERROR: Job contains too many files."
         return
 
-    def test100EventMultipleFileSplitNoDQMCurveNoPerfCurve(self):
+    def test6hJobMultipleFileSplitNoDQMCurveNoPerfCurve(self):
         """
-        _test100EventMultipleFileSplitNoDQMCurve_
+        _test6hJobMultipleFileSplitNoDQMCurve_
 
         Here we do the same as before, but we don't pass the performance curve.
         The expected behavior is that for 2000 events file, 1 job get 1440 and
@@ -371,7 +424,11 @@ class LuminosityBasedTest(unittest.TestCase):
         splitter = SplitterFactory()
         jobFactory = splitter(self.multipleFileSubscription)
 
+        # Make sure that the function will not try to make HTTP requests within the test:
+        os.environ['X509_USER_PROXY'] = ""
+
         jobGroups = jobFactory(targetJobLength = 21600,
+                               cmsswversion = "CMSSW_5_3_6",
                                performance = self.performanceParams,
                                primaryDataset = "SingleMu")
 
@@ -386,68 +443,7 @@ class LuminosityBasedTest(unittest.TestCase):
                    "ERROR: Job contains too many files."
         return
 
-    def test50EventMultipleFileSplit(self):
-        """
-        _test50EventMultipleFileSplit_
-
-        Test job splitting into 50 event jobs when the input subscription has
-        more than one file available.
-        """
-
-        splitter = SplitterFactory()
-        jobFactory = splitter(self.multipleFileSubscription)
-
-        jobGroups = jobFactory(events_per_job = 50,
-                               performance = self.performanceParams)
-
-        assert len(jobGroups) == 1, \
-               "ERROR: JobFactory didn't return one JobGroup."
-
-        assert len(jobGroups[0].jobs) == 20, \
-               "ERROR: JobFactory created %s jobs not twenty" % len(jobGroups[0].jobs)
-
-        for job in jobGroups[0].jobs:
-            assert len(job.getFiles(type = "lfn")) == 1, \
-                   "ERROR: Job contains too many files."
-
-            assert job["mask"].getMaxEvents() == 50 or job["mask"].getMaxEvents() is None, \
-                   "ERROR: Job's max events is incorrect."
-
-            assert job["mask"]["FirstEvent"] in [0, 50], \
-                   "ERROR: Job's first event is incorrect."
-
-        return
-
-    def test150EventMultipleFileSplit(self):
-        """
-        _test150EventMultipleFileSplit_
-
-        Test job splitting into 150 event jobs when the input subscription has
-        more than one file available.  This test verifies that the job splitting
-        code will put at most one file in a job.
-        """
-        splitter = SplitterFactory()
-        jobFactory = splitter(self.multipleFileSubscription)
-
-        jobGroups = jobFactory(events_per_job = 150,
-                               performance = self.performanceParams)
-
-        assert len(jobGroups) == 1, \
-               "ERROR: JobFactory didn't return one JobGroup."
-
-        assert len(jobGroups[0].jobs) == 10, \
-               "ERROR: JobFactory created %s jobs not ten" % len(jobGroups[0].jobs)
-
-        for job in jobGroups[0].jobs:
-            assert len(job.getFiles(type = "lfn")) == 1, \
-                   "ERROR: Job contains too many files."
-
-            assert job["mask"].getMaxEvents() is None, \
-                   "ERROR: Job's max events is incorrect."
-
-            assert job["mask"]["FirstEvent"] is None, \
-                   "ERROR: Job's first event is incorrect."
-    
+        
 
 if __name__ == '__main__':
     unittest.main()

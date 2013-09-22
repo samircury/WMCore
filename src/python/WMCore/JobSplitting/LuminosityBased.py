@@ -42,7 +42,7 @@ class LuminosityBased(JobFactory):
         lheInput = kwargs.get("lheInputFiles", False)
         collectionName  = kwargs.get('collectionName', None)
         primaryDataset  = kwargs.get('primaryDataset', None)
-        cmsswversion  = kwargs.get('cmsswversion', "CMSSW_5_3_8_patch3")
+        cmsswversion  = kwargs.get('cmsswversion', None)
         targetJobLength = int(kwargs.get('targetJobLength', None))
         testDqmLuminosityPerLs = kwargs.get('testDqmLuminosityPerLs', None)
         testPerfCurve = kwargs.get('testPerfCurve', None)
@@ -91,107 +91,100 @@ class LuminosityBased(JobFactory):
                     for run in lumiDict.keys():
                         f.addRun(run = Run(run, *lumiDict[run]))
 
-            # Now a very important note on why/how those loops are structured :
-            # We don't really need to worry about iterating through the runs, 
-            # as this is a reconstruction-only splitting algorithm, which 
-            # guarantees that the input is always RAW data, which is bound to
-            # T0 algorithms, those guarantee that RAW data has no file with multiple runs. 
-            # __ all files will have 1 run __
             for f in fileList:
                 currentEvent = f['first_event']
                 eventsInFile = f['events']
                 # Keeping this one just in case, but we know that we will have 1 run per file
                 runs = list(f['runs'])
-                #for runObject in runs :
-                #run = runObject.run
-                run = runs[0].run
-    
-                # If we have it beforehand is because the test sent it from the test file.
-                if not testDqmLuminosityPerLs:
-                    # Test if the curve is in the Cache before fecthing it from DQM
-                    if not dqmLuminosityPerLsCache.has_key(run):
-                        dqmLuminosityPerLs = self.getLuminosityPerLsFromDQM(run)
-                        dqmLuminosityPerLsCache[run] = dqmLuminosityPerLs
-                else :
-                    dqmLuminosityPerLs = testDqmLuminosityPerLs
+                for runObject in runs :
+                    run = runObject.run
+        
+                    # If we have it beforehand is because the test sent it from the test file.
+                    if not testDqmLuminosityPerLs:
+                        # Test if the curve is in the Cache before fecthing it from DQM
+                        if not dqmLuminosityPerLsCache.has_key(run):
+                            dqmLuminosityPerLs = self.getLuminosityPerLsFromDQM(run)
+                            dqmLuminosityPerLsCache[run] = dqmLuminosityPerLs
+                    else :
+                        dqmLuminosityPerLs = testDqmLuminosityPerLs
 
-                if not testPerfCurve: # If we have it forehand is because the test sent it from the test file.
-                    # Test if the curve is in the Cache before fecthing it from DQM
-                    if not perfCurveCache.has_key(cmsswversion+primaryDataset): 
-                        perfCurve = self.getPerfCurve(cmsswversion, primaryDataset)
-                        perfCurveCache[cmsswversion+primaryDataset] = perfCurve
-                    #perfCurve = self.getPerfCurve(cmsswversion, primaryDataset)
-                else :
-                    perfCurve = testPerfCurve
+                    if not testPerfCurve: # If we have it forehand is because the test sent it from the test file.
+                        # Test if the curve is in the Cache before fecthing it from DQM
+                        if not perfCurveCache.has_key(cmsswversion+primaryDataset): 
+                            perfCurve = self.getPerfCurve(cmsswversion, primaryDataset)
+                            perfCurveCache[cmsswversion+primaryDataset] = perfCurve
+                        #perfCurve = self.getPerfCurve(cmsswversion, primaryDataset)
+                    else :
+                        perfCurve = testPerfCurve
 
-                # Now we got everything :
-                #  * Lumi-section range of file
-                #  * All sorts of information (luminosity, perf)
-                # So we should do the following :
-                #  * Get avg luminosity of the file range
-                fileTimePerEvent = 0 
-                if dqmLuminosityPerLs :
-                    avgLumi = self.getFileAvgLuminosity(f, dqmLuminosityPerLs)
+                    # Now we got everything :
+                    #  * Lumi-section range of file
+                    #  * All sorts of information (luminosity, perf)
+                    # So we should do the following :
+                    #  * Get avg luminosity of the file range
+                    fileTimePerEvent = 0 
+                    if dqmLuminosityPerLs :
+                        avgLumi = self.getFileAvgLuminosity(f, dqmLuminosityPerLs)
 
-                    #  * Get closest point in the curve, if multiple, average. Acceptable range should be defined
-                    # Interesting feature here : if it finds too much points with the given precision (3rd param)
-                    # It will call itself again, lowering the precision by 0.1 steps until it finds less than 5, more than 2 points
-                    # This way we can have a much more precise range into the curve, if there is a lot of data
-                    fileTimePerEvent = self.getFileTimePerEvent(avgLumi, perfCurve, 0.10)
-                    #  * If this can't be found, (not enough data somewhere, use timePerEvent)
-                if fileTimePerEvent == 0 :
-                    fileTimePerEvent = timePerEvent
-                #  * Get the TpE and find how much eventsPerJob we want for this file.
-                eventsPerJob = int(targetJobLength/fileTimePerEvent)
-                # This should become a logging.debug message!
-                if fileTimePerEvent != timePerEvent :
-                    logging.info("This file has average instantaneous luminosity %f average time per event %f and is getting %i events per job" % 
-                                    (avgLumi, fileTimePerEvent, eventsPerJob))
-                    print "This file has average instantaneous luminosity %f average time per event %f and is getting %i events per job" % (avgLumi, fileTimePerEvent, eventsPerJob)
-                else : 
-                    logging.info("This file did not get enough performance information and is getting manual TpE %f , therefore %i events per job" %
-                                    (fileTimePerEvent, eventsPerJob))
-                    print "This file did not get enough performance information and is getting manual TpE %f , therefore %i events per job" %   (fileTimePerEvent, eventsPerJob)
+                        #  * Get closest point in the curve, if multiple, average. Acceptable range should be defined
+                        # Interesting feature here : if it finds too much points with the given precision (3rd param)
+                        # It will call itself again, lowering the precision by 0.1 steps until it finds less than 5, more than 2 points
+                        # This way we can have a much more precise range into the curve, if there is a lot of data
+                        fileTimePerEvent = self.getFileTimePerEvent(avgLumi, perfCurve, 0.10)
+                        #  * If this can't be found, (not enough data somewhere, use timePerEvent)
+                    if fileTimePerEvent == 0 :
+                        fileTimePerEvent = timePerEvent
+                    #  * Get the TpE and find how much eventsPerJob we want for this file.
+                    eventsPerJob = int(targetJobLength/fileTimePerEvent)
+                    # This should become a logging.debug message!
+                    if fileTimePerEvent != timePerEvent :
+                        logging.info("This file has average instantaneous luminosity %f average time per event %f and is getting %i events per job" % 
+                                        (avgLumi, fileTimePerEvent, eventsPerJob))
+                        print "This file has average instantaneous luminosity %f average time per event %f and is getting %i events per job" % (avgLumi, fileTimePerEvent, eventsPerJob)
+                    else : 
+                        logging.info("This file did not get enough performance information and is getting manual TpE %f , therefore %i events per job" %
+                                        (fileTimePerEvent, eventsPerJob))
+                        print "This file did not get enough performance information and is getting manual TpE %f , therefore %i events per job" %   (fileTimePerEvent, eventsPerJob)
 
-                # Ask about this in the list.
-                if not f['lfn'].startswith("MCFakeFile"):
-                    #Then we know for sure it is not a MCFakeFile, so process
-                    #it as usual
-                    if eventsInFile >= eventsPerJob:
-                        while currentEvent < eventsInFile:
+                    # Ask about this in the list.
+                    if not f['lfn'].startswith("MCFakeFile"):
+                        #Then we know for sure it is not a MCFakeFile, so process
+                        #it as usual
+                        if eventsInFile >= eventsPerJob:
+                            while currentEvent < eventsInFile:
+                                self.newJob(name = self.getJobName(length=totalJobs))
+                                self.currentJob.addFile(f)
+                                if eventsPerJob + currentEvent < eventsInFile:
+                                    jobTime = eventsPerJob * timePerEvent
+                                    diskRequired = eventsPerJob * sizePerEvent
+                                    self.currentJob["mask"].setMaxAndSkipEvents(eventsPerJob, currentEvent)
+                                else:
+                                    jobTime = (eventsInFile - currentEvent) * timePerEvent
+                                    diskRequired = (eventsInFile - currentEvent) * sizePerEvent
+                                    self.currentJob["mask"].setMaxAndSkipEvents(eventsInFile,
+                                                                                currentEvent)
+                                self.currentJob.addResourceEstimates(jobTime = jobTime,
+                                                                     memory = memoryRequirement,
+                                                                     disk = diskRequired)
+                                currentEvent += eventsPerJob
+                                totalJobs    += 1
+                        else:
                             self.newJob(name = self.getJobName(length=totalJobs))
                             self.currentJob.addFile(f)
-                            if eventsPerJob + currentEvent < eventsInFile:
-                                jobTime = eventsPerJob * timePerEvent
-                                diskRequired = eventsPerJob * sizePerEvent
-                                self.currentJob["mask"].setMaxAndSkipEvents(eventsPerJob, currentEvent)
-                            else:
-                                jobTime = (eventsInFile - currentEvent) * timePerEvent
-                                diskRequired = (eventsInFile - currentEvent) * sizePerEvent
-                                self.currentJob["mask"].setMaxAndSkipEvents(eventsInFile,
-                                                                            currentEvent)
+                            jobTime = eventsInFile * timePerEvent
+                            diskRequired = eventsInFile * sizePerEvent
                             self.currentJob.addResourceEstimates(jobTime = jobTime,
                                                                  memory = memoryRequirement,
                                                                  disk = diskRequired)
-                            currentEvent += eventsPerJob
-                            totalJobs    += 1
+                            totalJobs += 1
                     else:
-                        self.newJob(name = self.getJobName(length=totalJobs))
-                        self.currentJob.addFile(f)
-                        jobTime = eventsInFile * timePerEvent
-                        diskRequired = eventsInFile * sizePerEvent
-                        self.currentJob.addResourceEstimates(jobTime = jobTime,
-                                                             memory = memoryRequirement,
-                                                             disk = diskRequired)
-                        totalJobs += 1
-                else:
-                	# DO we need to worry about ACDC? Likely, but then the IF condition should be based in the ACDCFILELIST variable and not random FakeMC file
-                    if acdcFileList:
-                        if f['lfn'] in [x['lfn'] for x in acdcFileList]:
-                            totalJobs = self.createACDCJobs(f, acdcFileList,
-                                                            timePerEvent, sizePerEvent, memoryRequirement,
-                                                            lheInput, totalJobs)
-                        continue
+                    	# DO we need to worry about ACDC? Likely, but then the IF condition should be based in the ACDCFILELIST variable and not random FakeMC file
+                        if acdcFileList:
+                            if f['lfn'] in [x['lfn'] for x in acdcFileList]:
+                                totalJobs = self.createACDCJobs(f, acdcFileList,
+                                                                timePerEvent, sizePerEvent, memoryRequirement,
+                                                                lheInput, totalJobs)
+                            continue
 
     def createACDCJobs(self, fakeFile, acdcFileInfo,
                        timePerEvent, sizePerEvent, memoryRequirement,
@@ -270,9 +263,12 @@ class LuminosityBased(JobFactory):
         return avgTPE
 
     def getLuminosityPerLsFromDQM(self, run):
-        
+
+        if os.getenv("X509_USER_PROXY") is None:
+            return False
+                    
         # Get the proxy, as CMSWEB doesn't allow us to use plain HTTP
-        hostCert = os.getenv("X509_USER_PROXY")
+        hostCert = os.getenv("X509_USER_PROXY")    
         hostKey  = hostCert
         try :
             os.stat(hostCert)        
@@ -281,9 +277,6 @@ class LuminosityBased(JobFactory):
             return False
         dqmUrl = "https://cmsweb.cern.ch/dqm/online/"
         getUrl = "%sjsonfairy/archive/%s/Global/Online/ALL/PixelLumi/PixelLumiDqmZeroBias/totalPixelLumiByLS" % (dqmUrl, str(run))
-
-        # FIXME: remove this in the final commits
-        print "Requesting performance information from %s" % getUrl
         
         regExp=re.compile('https://(.*)(/dqm.+)')
         regExpResult = regExp.match(getUrl)
@@ -303,5 +296,16 @@ class LuminosityBased(JobFactory):
         return responseJSON
 
     def getPerfCurve(self, cmsswversion, primaryDataset):
+    
+	    #dashbUrl = "http://dashb-luminosity.cern.ch/dashboard/request.py/getpoints?luminosityFrom=1&luminosityTo=9000&release=%s&primaryDataset=%s" %
+	     #               (cmsswversion, primaryDataset)
+
+	    #response = urllib2.urlopen(dashbUrl)
+
+	    # FIXME:check 200 or bail
+
+	    #dashbjson = json.loads(response.read())
+
+    
         return "a"
     
