@@ -18,6 +18,7 @@ import httplib
 import json
 import logging
 import traceback
+import urllib2
 from math import ceil
 
 from WMCore.JobSplitting.JobFactory import JobFactory
@@ -297,15 +298,21 @@ class LuminosityBased(JobFactory):
 
     def getPerfCurve(self, cmsswversion, primaryDataset):
     
-	    #dashbUrl = "http://dashb-luminosity.cern.ch/dashboard/request.py/getpoints?luminosityFrom=1&luminosityTo=9000&release=%s&primaryDataset=%s" %
-	     #               (cmsswversion, primaryDataset)
+        dashbUrl = "http://dashb-luminosity.cern.ch/dashboard/request.py/getpoints?luminosityFrom=1&luminosityTo=9000&release=%s&primaryDataset=%s" % (cmsswversion, primaryDataset)
 
-	    #response = urllib2.urlopen(dashbUrl)
+        try:
+            response = urllib2.urlopen(dashbUrl)
+            #urllib2.urlopen(dashbUrl)
+        except urllib2.HTTPError, e:
+            print "HTTP Error when fetching performance curve : %s" % e.code
+            logging.debug("HTTP Error when fetching performance curve : %s" % e.code)
+            return "error"
+        except urllib2.URLError, e:
+            logging.debug("URLError in perfCurve fetching. Check the agent's connectivity")
+            return "error"
 
-	    # FIXME:check 200 or bail
-
-	    #dashbjson = json.loads(response.read())
+        dashbJson = json.loads(response.read())
 
     
-        return "a"
+        return dashbJson["points"][0]["data"]
     
