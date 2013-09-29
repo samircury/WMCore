@@ -44,7 +44,7 @@ class LuminosityBased(JobFactory):
         collectionName  = kwargs.get('collectionName', None)
         primaryDataset  = kwargs.get('primaryDataset', None)
         cmsswversion  = kwargs.get('cmsswversion', None)
-        targetJobLength = int(kwargs.get('targetJobLength', None))
+        targetJobLength = int(kwargs.get('targetJobLength', 21600))
         testDqmLuminosityPerLs = kwargs.get('testDqmLuminosityPerLs', None)
         testPerfCurve = kwargs.get('testPerfCurve', None)
         minLuminosity = int(kwargs.get('minLuminosity', 1))
